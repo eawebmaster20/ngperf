@@ -800,4 +800,391 @@ export class PerformanceAnalyzer {
   }
 }
 
+// Usage example and CLI integration helper
+export class PerformanceAnalyzerCLI {
+  public static analyzeProject(projectPath: string): ComponentAnalysis[] {
+    const analyzer = new PerformanceAnalyzer();
+    const results: ComponentAnalysis[] = [];
 
+    // In real implementation, you'd recursively find all component files
+    // This is a simplified example
+    const componentFiles = this.findComponentFiles(projectPath);
+
+    componentFiles.forEach((filePath) => {
+      try {
+        const analysis = analyzer.analyzeComponent(filePath);
+        results.push(analysis);
+      } catch (error) {
+        console.error(`Error analyzing ${filePath}:`, error);
+      }
+    });
+
+    return results;
+  }
+
+  public static analyzeProjectWithSummary(projectPath: string): {
+    analyses: ComponentAnalysis[];
+    summary: ProjectSummary;
+  } {
+    const analyzer = new PerformanceAnalyzer();
+    const results: ComponentAnalysis[] = [];
+    const componentFiles = this.findComponentFiles(projectPath);
+
+    console.log(`Found ${componentFiles.length} component files to analyze...`);
+
+    let successCount = 0;
+    let errorCount = 0;
+
+    componentFiles.forEach((filePath, index) => {
+      try {
+        console.log(
+          `Analyzing ${index + 1}/${componentFiles.length}: ${filePath}`
+        );
+        const analysis = analyzer.analyzeComponent(filePath);
+        results.push(analysis);
+        successCount++;
+      } catch (error) {
+        console.error(`Error analyzing ${filePath}:`, error);
+        errorCount++;
+      }
+    });
+
+    const summary = this.generateProjectSummary(
+      results,
+      successCount,
+      errorCount
+    );
+
+    return {
+      analyses: results,
+      summary,
+    };
+  }
+
+  private static generateProjectSummary(
+    analyses: ComponentAnalysis[],
+    successCount: number,
+    errorCount: number
+  ): ProjectSummary {
+    const totalIssues = analyses.reduce((sum, analysis) => {
+      return (
+        sum +
+        analysis.changeDetectionIssues.length +
+        analysis.templateIssues.length +
+        analysis.subscriptionIssues.length
+      );
+    }, 0);
+
+    const averageScore =
+      analyses.length > 0
+        ? analyses.reduce(
+            (sum, analysis) => sum + analysis.performanceScore,
+            0
+          ) / analyses.length
+        : 0;
+
+    const issuesByType = {
+      'missing-onpush': 0,
+      'function-in-template': 0,
+      'missing-trackby': 0,
+      'manual-subscription': 0,
+      'async-pipe-opportunity': 0,
+      'large-ngfor': 0,
+    };
+
+    analyses.forEach((analysis) => {
+      analysis.changeDetectionIssues.forEach((issue) => {
+        issuesByType[issue.type as keyof typeof issuesByType]++;
+      });
+      analysis.templateIssues.forEach((issue) => {
+        issuesByType[issue.type as keyof typeof issuesByType]++;
+      });
+      analysis.subscriptionIssues.forEach((issue) => {
+        issuesByType[issue.type as keyof typeof issuesByType]++;
+      });
+    });
+
+    return {
+      totalComponents: successCount,
+      totalIssues,
+      averagePerformanceScore: Math.round(averageScore * 100) / 100,
+      analysisErrors: errorCount,
+      issueBreakdown: issuesByType,
+      topIssues: Object.entries(issuesByType)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 3)
+        .map(([type, count]) => ({ type, count })),
+    };
+  }
+
+  private static findComponentFiles(projectPath: string): string[] {
+    const componentFiles: string[] = [];
+
+    const traverseDirectory = (dirPath: string) => {
+      try {
+        const items = readdirSync(dirPath);
+
+        for (const item of items) {
+          const fullPath = join(dirPath, item);
+
+          try {
+            const stats = statSync(fullPath);
+
+            if (stats.isDirectory()) {
+              // Skip node_modules, dist, and other build directories
+              if (!this.shouldSkipDirectory(item)) {
+                traverseDirectory(fullPath);
+              }
+            } else if (stats.isFile()) {
+              // Check if it's a component file
+              if (this.isComponentFile(fullPath)) {
+                componentFiles.push(fullPath);
+              }
+            }
+          } catch (error) {
+            // Skip files/directories we can't access
+            console.warn(
+              `Could not access ${fullPath}:`,
+              error instanceof Error ? error.message : error
+            );
+          }
+        }
+      } catch (error) {
+        console.warn(
+          `Could not read directory ${dirPath}:`,
+          error instanceof Error ? error.message : error
+        );
+      }
+    };
+
+    traverseDirectory(projectPath);
+    return componentFiles;
+  }
+
+  private static shouldSkipDirectory(dirName: string): boolean {
+    const skipDirs = [
+      'node_modules',
+      'dist',
+      'build',
+      '.git',
+      '.angular',
+      'coverage',
+      'e2e',
+      '.vscode',
+      '.idea',
+      'tmp',
+      'temp',
+    ];
+
+    return skipDirs.includes(dirName) || dirName.startsWith('.');
+  }
+
+  private static isComponentFile(filePath: string): boolean {
+    // Check if the file has .component.ts extension
+    if (!filePath.endsWith('.component.ts')) {
+      return false;
+    }
+
+    // Additional validation: check if the file actually contains a @Component decorator
+    try {
+      const content = readFileSync(filePath, 'utf8');
+
+      // Simple check for @Component decorator
+      const hasComponentDecorator = content.includes('@Component');
+      const hasClassDeclaration = /class\s+\w+.*Component/i.test(content);
+
+      return hasComponentDecorator && hasClassDeclaration;
+    } catch (error) {
+      console.warn(
+        `Could not validate component file ${filePath}:`,
+        error instanceof Error ? error.message : error
+      );
+      return false;
+    }
+  }
+
+  public static generateReport(analyses: ComponentAnalysis[]): string {
+    let report = '# Angular Performance Analysis Report\n\n';
+
+    if (analyses.length === 0) {
+      report += '⚠️ No components found to analyze.\n\n';
+      return report;
+    }
+
+    // Project overview
+    const totalIssues = analyses.reduce((sum, analysis) => {
+      return (
+        sum +
+        analysis.changeDetectionIssues.length +
+        analysis.templateIssues.length +
+        analysis.subscriptionIssues.length
+      );
+    }, 0);
+
+    const averageScore =
+      analyses.reduce((sum, analysis) => sum + analysis.performanceScore, 0) /
+      analyses.length;
+
+    report += `## 📊 Project Overview\n`;
+    report += `- **Components Analyzed**: ${analyses.length}\n`;
+    report += `- **Average Performance Score**: ${
+      Math.round(averageScore * 100) / 100
+    }/100\n`;
+    report += `- **Total Issues Found**: ${totalIssues}\n\n`;
+
+    // Performance distribution
+    const scoreRanges = {
+      excellent: analyses.filter((a) => a.performanceScore >= 90).length,
+      good: analyses.filter(
+        (a) => a.performanceScore >= 70 && a.performanceScore < 90
+      ).length,
+      fair: analyses.filter(
+        (a) => a.performanceScore >= 50 && a.performanceScore < 70
+      ).length,
+      poor: analyses.filter((a) => a.performanceScore < 50).length,
+    };
+
+    report += `## 🎯 Performance Distribution\n`;
+    report += `- **Excellent (90-100)**: ${scoreRanges.excellent} components\n`;
+    report += `- **Good (70-89)**: ${scoreRanges.good} components\n`;
+    report += `- **Fair (50-69)**: ${scoreRanges.fair} components\n`;
+    report += `- **Poor (0-49)**: ${scoreRanges.poor} components\n\n`;
+
+    // Top priority components (lowest scores)
+    const sortedByScore = [...analyses].sort(
+      (a, b) => a.performanceScore - b.performanceScore
+    );
+    const topPriority = sortedByScore.slice(0, 5);
+
+    if (topPriority.length > 0) {
+      report += `## 🚨 Top Priority Components (Lowest Scores)\n`;
+      topPriority.forEach((analysis, index) => {
+        report += `${index + 1}. **${analysis.componentName}** - Score: ${
+          analysis.performanceScore
+        }/100\n`;
+      });
+      report += '\n';
+    }
+
+    // Detailed component analysis
+    report += `## 📋 Detailed Component Analysis\n\n`;
+
+    analyses.forEach((analysis) => {
+      report += `### ${analysis.componentName}\n`;
+      report += `**File**: \`${analysis.filePath}\`  \n`;
+      report += `**Performance Score**: ${analysis.performanceScore}/100\n\n`;
+
+      const allIssues = [
+        ...analysis.changeDetectionIssues,
+        ...analysis.templateIssues,
+        ...analysis.subscriptionIssues,
+      ];
+
+      if (allIssues.length > 0) {
+        report += `#### Issues Found (${allIssues.length})\n`;
+
+        // Group by severity
+        const highSeverity = allIssues.filter((i) => i.severity === 'high');
+        const mediumSeverity = allIssues.filter((i) => i.severity === 'medium');
+        const lowSeverity = allIssues.filter((i) => i.severity === 'low');
+
+        [
+          { severity: 'high', issues: highSeverity, emoji: '🔴' },
+          { severity: 'medium', issues: mediumSeverity, emoji: '🟡' },
+          { severity: 'low', issues: lowSeverity, emoji: '🟢' },
+        ].forEach((group) => {
+          if (group.issues.length > 0) {
+            group.issues.forEach((issue) => {
+              report += `${group.emoji} **${issue.type}** (${issue.severity})\n`;
+              report += `   ${issue.description}\n`;
+              report += `   *Fix*: ${issue.fix}\n\n`;
+            });
+          }
+        });
+      }
+
+      if (analysis.recommendations.length > 0) {
+        report += '#### 💡 Recommendations\n';
+        analysis.recommendations.forEach((rec) => {
+          const priorityEmoji =
+            rec.priority === 'high'
+              ? '🔥'
+              : rec.priority === 'medium'
+              ? '⚡'
+              : '💡';
+          report += `${priorityEmoji} **${rec.title}** (${rec.priority} priority)\n`;
+          report += `   ${rec.description}\n`;
+          report += `   *Impact*: ${rec.estimatedImpact}\n\n`;
+        });
+      }
+
+      report += '---\n\n';
+    });
+
+    return report;
+  }
+
+  public static generateReportWithSummary(
+    analyses: ComponentAnalysis[],
+    summary: ProjectSummary
+  ): string {
+    let report = this.generateReport(analyses);
+
+    // Add summary section at the end
+    report += `## 📈 Analysis Summary\n\n`;
+    report += `- **Components Processed**: ${summary.totalComponents}\n`;
+    report += `- **Analysis Errors**: ${summary.analysisErrors}\n`;
+    report += `- **Average Score**: ${summary.averagePerformanceScore}/100\n\n`;
+
+    if (summary.topIssues.length > 0) {
+      report += `### Most Common Issues\n`;
+      summary.topIssues.forEach((issue, index) => {
+        report += `${index + 1}. **${issue.type}**: ${
+          issue.count
+        } occurrences\n`;
+      });
+    }
+
+    return report;
+  }
+
+  public static async saveReportToFile(
+    report: string,
+    outputPath: string = 'performance-report.md'
+  ): Promise<void> {
+    const fs = await import('fs/promises');
+    try {
+      await fs.writeFile(outputPath, report, 'utf8');
+      console.log(`✅ Performance report saved to: ${outputPath}`);
+    } catch (error) {
+      console.error(`❌ Failed to save report:`, error);
+      throw error;
+    }
+  }
+
+  public static runAnalysis(
+    projectPath: string,
+    outputPath?: string
+  ): ComponentAnalysis[] {
+    console.log(`🔍 Starting performance analysis for: ${projectPath}`);
+
+    const startTime = Date.now();
+    const { analyses, summary } = this.analyzeProjectWithSummary(projectPath);
+    const endTime = Date.now();
+
+    console.log(`\n✅ Analysis completed in ${endTime - startTime}ms`);
+    console.log(
+      `📊 Results: ${summary.totalComponents} components, ${summary.totalIssues} issues found`
+    );
+
+    const report = this.generateReportWithSummary(analyses, summary);
+
+    if (outputPath) {
+      this.saveReportToFile(report, outputPath).catch(console.error);
+    } else {
+      console.log('\n' + report);
+    }
+
+    return analyses;
+  }
+}
