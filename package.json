@@ -9,7 +9,14 @@
   },
   "scripts": {
     "build": "tsc",
-    "prepare": "npm run build"
+    "prepare": "npm run build",
+    "ngperf": "tsx src/ngperf/cli.ts",
+    "analyze:project": "npm run ngperf project",
+    "analyze:component": "npm run ngperf component",
+    "analyze:report": "npm run ngperf report",
+    "analyze:help": "npm run ngperf help",
+    "analyze:demo": "tsx src/ngperf/quick-start.ts",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
     "angular",
