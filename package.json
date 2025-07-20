@@ -15,8 +15,7 @@
     "analyze:component": "npm run ngperf component",
     "analyze:report": "npm run ngperf report",
     "analyze:help": "npm run ngperf help",
-    "analyze:demo": "tsx src/ngperf/quick-start.ts",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "analyze:demo": "tsx src/ngperf/quick-start.ts"
   },
   "keywords": [
     "angular",
@@ -29,7 +28,7 @@
     "cli",
     "typescript"
   ],
-  "author": "eawebmaster20 <e.adomako@eaweb-solutions.com>",
+  "author": "eawebmaster20",
   "license": "MIT",
   "repository": {
     "type": "git",

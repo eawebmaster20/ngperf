@@ -1,2 +1,1 @@
-# angular-perf-analyzer
 # ngperf
