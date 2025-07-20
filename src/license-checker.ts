@@ -39,7 +39,7 @@ export class LicenseChecker {
     console.log('==================================');
     console.log('🆓 Free for all use cases with attribution');
     console.log('🙏 Please give credit in your project');
-    console.log('📧 Created by: eawebmaster20 (eaweb-solutions.com)');
+    console.log('📧 Created by: eawebmaster20');
     console.log('🌐 GitHub: https://github.com/eawebmaster20/ngperf');
     console.log('⭐ Consider starring the repository!');
     console.log('');
@@ -54,7 +54,7 @@ export class LicenseChecker {
     cli: string;
   } {
     return {
-      aboutSection: 'Performance analysis powered by ngperf\nCreated by eawebmaster20 (https://eaweb-solutions.com)',
+      aboutSection: 'Performance analysis powered by ngperf\nCreated by eawebmaster20 ',
       readme: 'This project uses [ngperf](https://github.com/eawebmaster20/ngperf) for Angular performance analysis.',
       cli: 'Powered by ngperf (https://github.com/eawebmaster20/ngperf)'
     };
