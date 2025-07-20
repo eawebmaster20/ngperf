@@ -1,0 +1,53 @@
+{
+  "name": "ngperf",
+  "version": "1.0.0",
+  "description": "A comprehensive Angular performance analyzer that identifies performance bottlenecks, memory leaks, and optimization opportunities in Angular applications",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "ngperf": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "angular",
+    "performance",
+    "analyzer",
+    "optimization",
+    "change-detection",
+    "onpush",
+    "memory-leaks",
+    "cli",
+    "typescript"
+  ],
+  "author": "eawebmaster20 <e.adomako@eaweb-solutions.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/eawebmaster20/ngperf.git"
+  },
+  "bugs": {
+    "url": "https://github.com/eawebmaster20/ngperf/issues"
+  },
+  "homepage": "https://github.com/eawebmaster20/ngperf#readme",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "typescript": "~5.7.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.10",
+    "tsx": "^4.20.3"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
