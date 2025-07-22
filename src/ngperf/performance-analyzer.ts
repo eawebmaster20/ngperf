@@ -30,6 +30,7 @@ export interface ChangeDetectionProblem {
 export interface TemplatePerformanceIssue {
   type:
     | 'missing-trackby'
+    | 'suboptimal-trackby'
     | 'async-pipe-opportunity'
     | 'expensive-pipe'
     | 'large-ngfor';
@@ -312,13 +313,30 @@ export class PerformanceAnalyzer {
     const ngForLoops = this.findNgForLoops(this.componentInfo.templateCode);
     ngForLoops.forEach((loop) => {
       if (!loop.hasTrackBy) {
+        const syntaxType = loop.isModernSyntax ? '@for' : '*ngFor';
+        const defaultFix = loop.isModernSyntax 
+          ? 'Add track expression to prevent unnecessary DOM manipulations'
+          : 'Add trackBy function to prevent unnecessary DOM manipulations';
+        
+        const smartFix = loop.recommendedTracking || defaultFix;
+        
         issues.push({
           type: 'missing-trackby',
           severity: 'high',
           location: loop.location,
-          description: `*ngFor loop missing trackBy function`,
+          description: `${syntaxType} loop missing tracking function`,
           elementCount: loop.estimatedSize,
-          fix: 'Add trackBy function to prevent unnecessary DOM manipulations',
+          fix: smartFix,
+        });
+      } else if (loop.recommendedTracking) {
+        // Has tracking but could be improved
+        issues.push({
+          type: 'suboptimal-trackby',
+          severity: 'medium',
+          location: loop.location,
+          description: `${loop.isModernSyntax ? '@for' : '*ngFor'} loop tracking could be optimized`,
+          elementCount: loop.estimatedSize,
+          fix: loop.recommendedTracking,
         });
       }
     });
@@ -646,16 +664,22 @@ export class PerformanceAnalyzer {
     location: CodeLocation;
     hasTrackBy: boolean;
     estimatedSize?: number;
+    isModernSyntax?: boolean;
+    recommendedTracking?: string;
   }> {
     const loops: Array<{
       location: CodeLocation;
       hasTrackBy: boolean;
       estimatedSize?: number;
+      isModernSyntax?: boolean;
+      recommendedTracking?: string;
     }> = [];
-    const regex = /\*ngFor\s*=\s*"([^"]*)"/g;
+    
+    // Legacy *ngFor syntax
+    const ngForRegex = /\*ngFor\s*=\s*"([^"]*)"/g;
     let match;
 
-    while ((match = regex.exec(template)) !== null) {
+    while ((match = ngForRegex.exec(template)) !== null) {
       const hasTrackBy = match[1].includes('trackBy');
       loops.push({
         location: {
@@ -666,10 +690,68 @@ export class PerformanceAnalyzer {
         },
         hasTrackBy,
         estimatedSize: this.estimateLoopSize(match[1]),
+        isModernSyntax: false
+      });
+    }
+
+    // Modern @for syntax
+    const modernForRegex = /@for\s*\(\s*([^;]+);\s*track\s+([^)]+)\)|@for\s*\(\s*([^)]+)\)/g;
+    
+    while ((match = modernForRegex.exec(template)) !== null) {
+      const hasTrackBy = match[2] !== undefined; // Has track expression
+      const loopExpression = match[1] || match[3]; // Get the loop expression
+      const trackExpression = match[2]; // Get tracking expression if present
+      
+      // Analyze the loop expression for smart tracking recommendations
+      const recommendedTracking = this.analyzeForTrackingRecommendation(loopExpression, trackExpression);
+      
+      loops.push({
+        location: {
+          file: this.componentInfo.templatePath || 'inline template',
+          line: this.getLineNumber(template, match.index),
+          column: this.getColumnNumber(template, match.index),
+          snippet: match[0],
+        },
+        hasTrackBy,
+        estimatedSize: this.estimateLoopSize(loopExpression),
+        isModernSyntax: true,
+        recommendedTracking
       });
     }
 
     return loops;
+  }
+
+  private analyzeForTrackingRecommendation(loopExpression: string, currentTracking?: string): string | undefined {
+    if (currentTracking) {
+      // Already has tracking, check if it could be improved
+      if (currentTracking.includes('$index') && this.hasIdProperty(loopExpression)) {
+        return 'Consider tracking by object id instead of $index for better performance';
+      }
+      return undefined;
+    }
+
+    // No tracking, provide recommendation
+    if (this.hasIdProperty(loopExpression)) {
+      const itemVar = this.extractItemVariable(loopExpression);
+      return `Add tracking: track ${itemVar}.id`;
+    } else {
+      const itemVar = this.extractItemVariable(loopExpression);
+      return `Add tracking: track ${itemVar}`;
+    }
+  }
+
+  private hasIdProperty(loopExpression: string): boolean {
+    // Simple heuristic: if the array variable contains 'item', 'user', 'product', etc.
+    // and typically has id properties, suggest id tracking
+    const commonIdPatterns = /\b(items?|users?|products?|entities?|records?|data|list|todos?|tasks?|messages?|posts?)\b/i;
+    return commonIdPatterns.test(loopExpression);
+  }
+
+  private extractItemVariable(loopExpression: string): string {
+    // Extract item variable from expressions like "let item of items" or "item of collection; let i = $index"
+    const match = loopExpression.match(/let\s+(\w+)\s+of|(\w+)\s+of/);
+    return match ? (match[1] || match[2]) : 'item';
   }
 
   private findSubscriptionUsagesInTemplate(
@@ -802,13 +884,16 @@ export class PerformanceAnalyzer {
 
 // Usage example and CLI integration helper
 export class PerformanceAnalyzerCLI {
-  public static analyzeProject(projectPath: string): ComponentAnalysis[] {
+  public static analyzeProject(projectPath?: string): ComponentAnalysis[] {
     const analyzer = new PerformanceAnalyzer();
     const results: ComponentAnalysis[] = [];
 
+    // Use current working directory if no path provided
+    const targetPath = projectPath || process.cwd();
+    
     // In real implementation, you'd recursively find all component files
     // This is a simplified example
-    const componentFiles = this.findComponentFiles(projectPath);
+    const componentFiles = this.findComponentFiles(targetPath);
 
     componentFiles.forEach((filePath) => {
       try {
@@ -822,13 +907,17 @@ export class PerformanceAnalyzerCLI {
     return results;
   }
 
-  public static analyzeProjectWithSummary(projectPath: string): {
+  public static analyzeProjectWithSummary(projectPath?: string): {
     analyses: ComponentAnalysis[];
     summary: ProjectSummary;
   } {
     const analyzer = new PerformanceAnalyzer();
     const results: ComponentAnalysis[] = [];
-    const componentFiles = this.findComponentFiles(projectPath);
+    
+    // Use current working directory if no path provided
+    const targetPath = projectPath || process.cwd();
+    
+    const componentFiles = this.findComponentFiles(targetPath);
 
     console.log(`Found ${componentFiles.length} component files to analyze...`);
 
@@ -1163,13 +1252,16 @@ export class PerformanceAnalyzerCLI {
   }
 
   public static runAnalysis(
-    projectPath: string,
+    projectPath?: string,
     outputPath?: string
   ): ComponentAnalysis[] {
-    console.log(`🔍 Starting performance analysis for: ${projectPath}`);
+    // Use current working directory if no path provided
+    const targetPath = projectPath || process.cwd();
+    
+    console.log(`🔍 Starting performance analysis for: ${targetPath}`);
 
     const startTime = Date.now();
-    const { analyses, summary } = this.analyzeProjectWithSummary(projectPath);
+    const { analyses, summary } = this.analyzeProjectWithSummary(targetPath);
     const endTime = Date.now();
 
     console.log(`\n✅ Analysis completed in ${endTime - startTime}ms`);
