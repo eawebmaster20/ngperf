@@ -163,7 +163,7 @@ const commands = {
 🚀 Angular Performance Analyzer CLI
 
 USAGE:
-  ngperf <command> [options]
+  ng-perf-checker <command> [options]
 
 COMMANDS:
   project [path]              Analyze entire project
@@ -176,20 +176,20 @@ OPTIONS:
   -f, --format <type>         Report format: 'markdown' or 'json' (default: markdown)
 
 EXAMPLES:
-  ngperf help                                         # Show this help
-  ngperf project                                      # Analyze current project
-  ngperf project ./src/app                           # Analyze src/app folder
-  ngperf project ./src/app -o ./reports/report.md    # Save to custom file
-  ngperf project ./src/app -f json                   # Generate JSON report
-  ngperf project ./src/app -o ./report.json -f json  # JSON report with custom path
+  ng-perf-checker help                                         # Show this help
+  ng-perf-checker project                                      # Analyze current project
+  ng-perf-checker project ./src/app                           # Analyze src/app folder
+  ng-perf-checker project ./src/app -o ./reports/report.md    # Save to custom file
+  ng-perf-checker project ./src/app -f json                   # Generate JSON report
+  ng-perf-checker project ./src/app -o ./report.json -f json  # JSON report with custom path
   
-  ngperf component ./src/app/app.component.ts        # Analyze single component
+  ng-perf-checker component ./src/app/app.component.ts        # Analyze single component
   
-  ngperf report                                       # Generate detailed report
-  ngperf report ./src/app -o ./my-report.md          # Custom output path
+  ng-perf-checker report                                       # Generate detailed report
+  ng-perf-checker report ./src/app -o ./my-report.md          # Custom output path
 
 DEVELOPMENT USAGE (in project root):
-  npm run ngperf project                              # If added to package.json scripts
+  npm run ng-perf-checker project                              # If added to package.json scripts
   npx tsx src/ngperf/cli.ts project                  # Direct TypeScript execution
 
 For more information: https://github.com/eawebmaster20/ngperf
