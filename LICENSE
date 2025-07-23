@@ -1,0 +1,68 @@
+# ngperf License
+
+## MIT License with Attribution Requirements
+
+Copyright (c) 2025 eawebmaster20
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+## Attribution Requirements
+
+**All usage of this software must include proper attribution:**
+
+### 1. Code Attribution
+- The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software
+- If you modify the software, you must clearly indicate the modifications made
+
+### 2. User-Facing Attribution (Required for all projects)
+You must include attribution in at least ONE of the following ways:
+
+**Option A: In your application's About/Credits section:**
+```
+Performance analysis powered by ngperf
+Created by eawebmaster20 
+```
+
+**Option B: In your project's README or documentation:**
+```
+## Performance Analysis
+This project uses [ngperf](https://github.com/eawebmaster20/ngperf) 
+for Angular performance analysis, created by [eawebmaster20].
+```
+
+**Option C: In CLI output or logs:**
+```
+Powered by ngperf (https://github.com/eawebmaster20/ngperf)
+```
+
+### 3. Commercial Use Welcome
+- ✅ Free for personal projects
+- ✅ Free for open source projects  
+- ✅ Free for commercial projects
+- ✅ Free for enterprise use
+- 🎯 **Just give credit where it's due!**
+
+### 4. Optional Recognition (Appreciated but not required)
+- ⭐ Star the GitHub repository
+- 🐦 Mention @eawebmaster20 on social media
+- 📝 Write a blog post about your experience
+- 💡 Contribute improvements back to the project
+
+## Warranty Disclaimer
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+**🙏 Thank you for using ngperf and supporting open source development!**
