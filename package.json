@@ -1,11 +1,11 @@
 {
-  "name": "ngperf",
+  "name": "ngperf-audit",
   "version": "1.0.0",
   "description": "A comprehensive Angular performance analyzer that identifies performance bottlenecks, memory leaks, and optimization opportunities in Angular applications",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "ngperf": "dist/cli.js"
+    "ngperf-audit": "dist/cli.js"
   },
   "scripts": {
     "build": "tsc",
