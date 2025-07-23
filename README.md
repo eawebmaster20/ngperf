@@ -36,16 +36,16 @@ npx ngperf-audit project
 
 ```bash
 # Analyze entire Angular project
-ngperf project ./src/app
+ngperf-audit project ./src/app
 
 # Analyze specific component
-ngperf component ./src/app/my-component/my-component.ts
+ngperf-audit component ./src/app/my-component/my-component.ts
 
 # Generate detailed report
-ngperf report ./src/app
+ngperf-audit report ./src/app
 
 # Get help
-ngperf help
+ngperf-audit help
 ```
 
 ### Programmatic Usage
@@ -66,7 +66,7 @@ await PerformanceAnalyzerCLI.saveReportToFile(report, './performance-report.md')
 
 ## Commands
 
-### `ngperf project <path>`
+### `ngperf-audit project <path>`
 Analyzes all Angular components in the specified directory and generates a comprehensive report.
 
 **Options:**
@@ -75,30 +75,30 @@ Analyzes all Angular components in the specified directory and generates a compr
 
 **Examples:**
 ```bash
-ngperf project ./src/app
-ngperf project ./src/app -o ./reports/perf-analysis.md
-ngperf project ./src/app -f json
-ngperf project ./src/app -o ./reports/analysis.json -f json
+ngperf-audit project ./src/app
+ngperf-audit project ./src/app -o ./reports/perf-analysis.md
+ngperf-audit project ./src/app -f json
+ngperf-audit project ./src/app -o ./reports/analysis.json -f json
 ```
 
-### `ngperf component <path>`
+### `ngperf-audit component <path>`
 Analyzes a single Angular component file.
 
 **Example:**
 ```bash
-ngperf component ./src/app/user-profile/user-profile.component.ts
+ngperf-audit component ./src/app/user-profile/user-profile.component.ts
 ```
 
-### `ngperf report <path>`
+### `ngperf-audit report <path>`
 Generates a detailed performance report for the specified directory.
 
-### `ngperf help`
+### `ngperf-audit help`
 Shows help information and available commands.
 
 ## What It Analyzes
 
 ### 🔥 Smart OnPush Detection
-Unlike other tools that blindly recommend OnPush for every component, ngperf intelligently determines which components would actually benefit:
+Unlike other tools that blindly recommend OnPush for every component, ngperf-audit intelligently determines which components would actually benefit:
 
 - ✅ **Recommends OnPush for components with:**
   - Service injections (HttpClient, APIs, etc.)
@@ -171,8 +171,8 @@ Add performance checks to your build process:
 ```json
 {
   "scripts": {
-    "perf-check": "ngperf project ./src/app --format json",
-    "perf-report": "ngperf project ./src/app"
+    "perf-check": "ngperf-audit project ./src/app --format json",
+    "perf-report": "ngperf-audit project ./src/app"
   }
 }
 ```
@@ -187,7 +187,7 @@ Add performance checks to your build process:
 
 ## License
 
-**ngperf is free for everyone with attribution requirements** 🎉
+**ngperf-audit is free for everyone with attribution requirements** 🎉
 
 ### ✅ Free for All Use Cases
 - ✅ Personal projects
