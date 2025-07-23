@@ -1,4 +1,4 @@
-# ng-perf-checker
+# ngperf-audit
 
 A comprehensive Angular performance analyzer that identifies performance bottlenecks, memory leaks, and optimization opportunities in Angular applications.
 
@@ -18,16 +18,16 @@ A comprehensive Angular performance analyzer that identifies performance bottlen
 
 ### Global Installation (Recommended)
 ```bash
-npm install -g ng-perf-checker
+npm install -g ngperf-audit
 ```
 
 ### Project Installation
 ```bash
 # As dev dependency
-npm install --save-dev ng-perf-checker
+npm install --save-dev ngperf-audit
 
 # Using npx (no installation required)
-npx ng-perf-checker help
+npx ngperf-audit project
 ```
 
 ## Quick Start
@@ -51,7 +51,7 @@ ngperf help
 ### Programmatic Usage
 
 ```typescript
-import { PerformanceAnalyzerCLI, PerformanceAnalyzer } from 'ng-perf-checker';
+import { PerformanceAnalyzerCLI, PerformanceAnalyzer } from 'ngperf-audit';
 
 // Quick analysis with summary
 const { analyses, summary } = PerformanceAnalyzerCLI.analyzeProjectWithSummary('./src/app');
@@ -202,20 +202,20 @@ Just give credit where it's due! Include attribution in one of these ways:
 
 **In your app's About/Credits section:**
 ```
-Performance analysis powered by ng-perf-checker
+Performance analysis powered by ngperf-audit
 Created by eawebmaster20 (https://eaweb-solutions.com)
 ```
 
 **In your project's README:**
 ```markdown
 ## Performance Analysis
-This project uses [ng-perf-checker](https://github.com/eawebmaster20/ngperf) 
+This project uses [ngperf-audit](https://github.com/eawebmaster20/ngperf) 
 for Angular performance analysis.
 ```
 
 **In CLI output:**
 ```
-Powered by ng-perf-checker (https://github.com/eawebmaster20/ngperf)
+Powered by ngperf-audit (https://github.com/eawebmaster20/ngperf)
 ```
 
 ### 🌟 Show Your Appreciation (Optional)
