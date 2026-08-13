@@ -79,11 +79,13 @@ export interface ComponentInfo {
   sourceCode: string;
   templateCode?: string;
   metadata: ComponentMetadata;
+  signals: Set<string>;
 }
 
 export interface ComponentMetadata {
   selector: string;
   templateUrl?: string;
+  templateCode?: string;
   styleUrls?: string[];
   changeDetection?: string;
   inputs: string[];
@@ -163,10 +165,37 @@ export class PerformanceAnalyzer {
       outputs: [],
       providers: [],
     };
+    const signals = new Set<string>();
 
     const visit = (node: ts.Node) => {
       if (ts.isClassDeclaration(node) && node.name) {
         componentName = node.name.text;
+
+        node.members.forEach((member) => {
+          if (ts.isPropertyDeclaration(member) && member.name && ts.isIdentifier(member.name)) {
+            const propName = member.name.text;
+            if (member.initializer && ts.isCallExpression(member.initializer)) {
+              let isSignal = false;
+              const expr = member.initializer.expression;
+              
+              if (ts.isIdentifier(expr)) {
+                const callName = expr.text;
+                if (['signal', 'computed', 'input', 'model', 'viewChild', 'contentChild', 'viewChildren', 'contentChildren'].includes(callName)) {
+                  isSignal = true;
+                }
+              } else if (ts.isPropertyAccessExpression(expr) && ts.isIdentifier(expr.expression)) {
+                const objName = expr.expression.text;
+                if (['input', 'model'].includes(objName)) {
+                  isSignal = true;
+                }
+              }
+              
+              if (isSignal) {
+                signals.add(propName);
+              }
+            }
+          }
+        });
 
         // Extract @Component decorator
         let decorators: readonly ts.Decorator[] | undefined;
@@ -194,7 +223,9 @@ export class PerformanceAnalyzer {
     visit(sourceFile);
 
     let templateCode = '';
-    if (metadata.templateUrl) {
+    if (metadata.templateCode) {
+      templateCode = metadata.templateCode;
+    } else if (metadata.templateUrl) {
       const templatePath = join(filePath, '..', metadata.templateUrl);
       try {
         templateCode = readFileSync(templatePath, 'utf8');
@@ -209,6 +240,7 @@ export class PerformanceAnalyzer {
       sourceCode,
       templateCode,
       metadata,
+      signals,
     };
   }
 
@@ -233,6 +265,12 @@ export class PerformanceAnalyzer {
           ts.isStringLiteral(prop.initializer)
         ) {
           metadata.templateUrl = prop.initializer.text;
+        } else if (name === 'template') {
+          if (ts.isStringLiteral(prop.initializer) || ts.isNoSubstitutionTemplateLiteral(prop.initializer)) {
+            metadata.templateCode = prop.initializer.text;
+          } else if (ts.isTemplateExpression(prop.initializer)) {
+            metadata.templateCode = prop.initializer.getText().slice(1, -1);
+          }
         } else if (
           name === 'changeDetection' &&
           ts.isPropertyAccessExpression(prop.initializer)
@@ -619,19 +657,34 @@ export class PerformanceAnalyzer {
       functionName: string;
       location: CodeLocation;
     }> = [];
-    const regex = /\{\{\s*(\w+)\s*\(\s*\)\s*\}\}/g;
-    let match;
+    
+    const interpolationRegex = /\{\{([\s\S]*?)\}\}/g;
+    let interpolationMatch;
 
-    while ((match = regex.exec(template)) !== null) {
-      functionCalls.push({
-        functionName: match[1],
-        location: {
-          file: this.componentInfo.templatePath || 'inline template',
-          line: this.getLineNumber(template, match.index),
-          column: this.getColumnNumber(template, match.index),
-          snippet: match[0],
-        },
-      });
+    while ((interpolationMatch = interpolationRegex.exec(template)) !== null) {
+      const content = interpolationMatch[1];
+      const interpolationIndex = interpolationMatch.index;
+      
+      const fnRegex = /\b(\w+)\s*\(/g;
+      let fnMatch;
+      while ((fnMatch = fnRegex.exec(content)) !== null) {
+        const funcName = fnMatch[1];
+        
+        const skipNames = ['String', 'Number', 'Boolean', 'Array', 'Object', 'Math', 'Date', 'JSON'];
+        if (skipNames.includes(funcName)) continue;
+        if (this.componentInfo.signals && this.componentInfo.signals.has(funcName)) continue;
+        
+        const absoluteIndex = interpolationIndex + 2 + fnMatch.index;
+        functionCalls.push({
+          functionName: funcName,
+          location: {
+            file: this.componentInfo.templatePath || 'inline template',
+            line: this.getLineNumber(template, absoluteIndex),
+            column: this.getColumnNumber(template, absoluteIndex),
+            snippet: fnMatch[0] + '...)',
+          },
+        });
+      }
     }
 
     return functionCalls;
@@ -777,6 +830,53 @@ export class PerformanceAnalyzer {
     return usages;
   }
 
+  private hasProperCleanup(node: ts.CallExpression): boolean {
+    let baseExpr = node.expression;
+    if (ts.isPropertyAccessExpression(baseExpr)) {
+      const obj = baseExpr.expression;
+      
+      if (ts.isCallExpression(obj) && ts.isPropertyAccessExpression(obj.expression) && obj.expression.name.text === 'pipe') {
+        for (const arg of obj.arguments) {
+          let operatorName = '';
+          if (ts.isCallExpression(arg)) {
+            const expr = arg.expression;
+            if (ts.isIdentifier(expr)) {
+              operatorName = expr.text;
+            }
+          } else if (ts.isIdentifier(arg)) {
+            operatorName = arg.text;
+          }
+          
+          if (['takeUntil', 'takeUntilDestroyed', 'take', 'first'].includes(operatorName)) {
+            return true;
+          }
+        }
+      }
+    }
+    
+    let parent = node.parent;
+    while (parent) {
+      if (ts.isBinaryExpression(parent) && parent.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+        return true;
+      }
+      if (ts.isPropertyDeclaration(parent) || ts.isVariableDeclaration(parent)) {
+        return true;
+      }
+      if (ts.isCallExpression(parent) && ts.isPropertyAccessExpression(parent.expression)) {
+        const name = parent.expression.name.text;
+        if (name === 'add' || name === 'push') {
+          return true;
+        }
+      }
+      if (ts.isMethodDeclaration(parent) || ts.isFunctionDeclaration(parent) || ts.isArrowFunction(parent)) {
+        break;
+      }
+      parent = parent.parent;
+    }
+    
+    return false;
+  }
+
   private findManualSubscriptions(): Array<{
     location: CodeLocation;
     variableName: string;
@@ -792,20 +892,22 @@ export class PerformanceAnalyzer {
         ts.isPropertyAccessExpression(node.expression) &&
         node.expression.name.text === 'subscribe'
       ) {
-        const sourceFile = node.getSourceFile();
-        const lineChar = sourceFile.getLineAndCharacterOfPosition(
-          node.getStart()
-        );
+        if (!this.hasProperCleanup(node)) {
+          const sourceFile = node.getSourceFile();
+          const lineChar = sourceFile.getLineAndCharacterOfPosition(
+            node.getStart()
+          );
 
-        subscriptions.push({
-          location: {
-            file: this.componentInfo.filePath,
-            line: lineChar.line + 1,
-            column: lineChar.character + 1,
-            snippet: node.getText(),
-          },
-          variableName: node.expression.expression.getText(),
-        });
+          subscriptions.push({
+            location: {
+              file: this.componentInfo.filePath,
+              line: lineChar.line + 1,
+              column: lineChar.character + 1,
+              snippet: node.getText(),
+            },
+            variableName: node.expression.expression.getText(),
+          });
+        }
       }
       ts.forEachChild(node, visit);
     };
@@ -1069,18 +1171,16 @@ export class PerformanceAnalyzerCLI {
   }
 
   private static isComponentFile(filePath: string): boolean {
-    // Check if the file has .component.ts extension
-    if (!filePath.endsWith('.component.ts')) {
+    if (!filePath.endsWith('.ts') || filePath.endsWith('.spec.ts') || filePath.endsWith('.test.ts') || filePath.endsWith('.d.ts')) {
       return false;
     }
 
-    // Additional validation: check if the file actually contains a @Component decorator
     try {
       const content = readFileSync(filePath, 'utf8');
 
-      // Simple check for @Component decorator
+      // Check if file contains @Component decorator and a class declaration
       const hasComponentDecorator = content.includes('@Component');
-      const hasClassDeclaration = /class\s+\w+.*Component/i.test(content);
+      const hasClassDeclaration = /class\s+\w+/i.test(content);
 
       return hasComponentDecorator && hasClassDeclaration;
     } catch (error) {
@@ -1096,7 +1196,7 @@ export class PerformanceAnalyzerCLI {
     let report = '# Angular Performance Analysis Report\n\n';
 
     if (analyses.length === 0) {
-      report += '⚠️ No components found to analyze.\n\n';
+      report += 'No components found to analyze.\n\n';
       return report;
     }
 
@@ -1114,7 +1214,7 @@ export class PerformanceAnalyzerCLI {
       analyses.reduce((sum, analysis) => sum + analysis.performanceScore, 0) /
       analyses.length;
 
-    report += `## 📊 Project Overview\n`;
+    report += `## Project Overview\n`;
     report += `- **Components Analyzed**: ${analyses.length}\n`;
     report += `- **Average Performance Score**: ${
       Math.round(averageScore * 100) / 100
@@ -1133,7 +1233,7 @@ export class PerformanceAnalyzerCLI {
       poor: analyses.filter((a) => a.performanceScore < 50).length,
     };
 
-    report += `## 🎯 Performance Distribution\n`;
+    report += `## Performance Distribution\n`;
     report += `- **Excellent (90-100)**: ${scoreRanges.excellent} components\n`;
     report += `- **Good (70-89)**: ${scoreRanges.good} components\n`;
     report += `- **Fair (50-69)**: ${scoreRanges.fair} components\n`;
@@ -1146,7 +1246,7 @@ export class PerformanceAnalyzerCLI {
     const topPriority = sortedByScore.slice(0, 5);
 
     if (topPriority.length > 0) {
-      report += `## 🚨 Top Priority Components (Lowest Scores)\n`;
+      report += `## Top Priority Components (Lowest Scores)\n`;
       topPriority.forEach((analysis, index) => {
         report += `${index + 1}. **${analysis.componentName}** - Score: ${
           analysis.performanceScore
@@ -1156,7 +1256,7 @@ export class PerformanceAnalyzerCLI {
     }
 
     // Detailed component analysis
-    report += `## 📋 Detailed Component Analysis\n\n`;
+    report += `## Detailed Component Analysis\n\n`;
 
     analyses.forEach((analysis) => {
       report += `### ${analysis.componentName}\n`;
@@ -1178,13 +1278,13 @@ export class PerformanceAnalyzerCLI {
         const lowSeverity = allIssues.filter((i) => i.severity === 'low');
 
         [
-          { severity: 'high', issues: highSeverity, emoji: '🔴' },
-          { severity: 'medium', issues: mediumSeverity, emoji: '🟡' },
-          { severity: 'low', issues: lowSeverity, emoji: '🟢' },
+          { severity: 'high', issues: highSeverity, label: 'High' },
+          { severity: 'medium', issues: mediumSeverity, label: 'Medium' },
+          { severity: 'low', issues: lowSeverity, label: 'Low' },
         ].forEach((group) => {
           if (group.issues.length > 0) {
             group.issues.forEach((issue) => {
-              report += `${group.emoji} **${issue.type}** (${issue.severity})\n`;
+              report += `[${group.label}] **${issue.type}** (${issue.severity})\n`;
               report += `   ${issue.description}\n`;
               report += `   *Fix*: ${issue.fix}\n\n`;
             });
@@ -1193,15 +1293,9 @@ export class PerformanceAnalyzerCLI {
       }
 
       if (analysis.recommendations.length > 0) {
-        report += '#### 💡 Recommendations\n';
+        report += '#### Recommendations\n';
         analysis.recommendations.forEach((rec) => {
-          const priorityEmoji =
-            rec.priority === 'high'
-              ? '🔥'
-              : rec.priority === 'medium'
-              ? '⚡'
-              : '💡';
-          report += `${priorityEmoji} **${rec.title}** (${rec.priority} priority)\n`;
+          report += `[Recommendation] **${rec.title}** (${rec.priority} priority)\n`;
           report += `   ${rec.description}\n`;
           report += `   *Impact*: ${rec.estimatedImpact}\n\n`;
         });
@@ -1220,7 +1314,7 @@ export class PerformanceAnalyzerCLI {
     let report = this.generateReport(analyses);
 
     // Add summary section at the end
-    report += `## 📈 Analysis Summary\n\n`;
+    report += `## Analysis Summary\n\n`;
     report += `- **Components Processed**: ${summary.totalComponents}\n`;
     report += `- **Analysis Errors**: ${summary.analysisErrors}\n`;
     report += `- **Average Score**: ${summary.averagePerformanceScore}/100\n\n`;
@@ -1237,6 +1331,624 @@ export class PerformanceAnalyzerCLI {
     return report;
   }
 
+  public static generateHtmlReport(
+    analyses: ComponentAnalysis[],
+    summary: ProjectSummary
+  ): string {
+    const componentDataJson = JSON.stringify(analyses);
+    const summaryDataJson = JSON.stringify(summary);
+    
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Angular Performance Audit Report</title>
+  <style>
+    :root {
+      --bg-dark: #fafafa;
+      --bg-card: #ffffff;
+      --bg-card-hover: #f4f4f5;
+      --border-color: #e4e4e7;
+      --border-color-hover: #d4d4d8;
+      --text-main: #09090b;
+      --text-muted: #71717a;
+      --color-high: #ef4444;
+      --color-medium: #d97706;
+      --color-low: #059669;
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+    
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      line-height: 1.5;
+      padding: 3rem 2rem;
+    }
+    
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    
+    header {
+      margin-bottom: 3rem;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 1.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+    }
+    
+    .header-title h1 {
+      font-size: 1.75rem;
+      font-weight: 600;
+      letter-spacing: -0.03em;
+    }
+    
+    .header-title p {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      margin-top: 0.35rem;
+    }
+    
+    .header-date {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      font-family: var(--font-mono);
+    }
+    
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+      margin-bottom: 3rem;
+    }
+    
+    @media (max-width: 768px) {
+      .dashboard-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    
+    .metric-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 1.5rem;
+    }
+    
+    .metric-title {
+      font-size: 0.75rem;
+      font-weight: 550;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.5rem;
+    }
+    
+    .metric-value {
+      font-size: 2rem;
+      font-weight: 600;
+      letter-spacing: -0.03em;
+      font-family: var(--font-mono);
+    }
+    
+    .metric-sub {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 0.5rem;
+    }
+    
+    .main-layout {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      gap: 3rem;
+    }
+    
+    @media (max-width: 960px) {
+      .main-layout {
+        grid-template-columns: 1fr;
+        gap: 2rem;
+      }
+    }
+    
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 2rem;
+    }
+    
+    .search-box {
+      width: 100%;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 0.65rem 0.85rem;
+      color: var(--text-main);
+      font-family: inherit;
+      font-size: 0.875rem;
+      outline: none;
+      transition: border-color 0.15s ease;
+    }
+    
+    .search-box:focus {
+      border-color: var(--border-color-hover);
+    }
+    
+    .filter-section {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    
+    .section-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+    }
+    
+    .severity-filters {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+    
+    .filter-btn {
+      background: none;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      padding: 0.5rem 0.75rem;
+      color: var(--text-muted);
+      cursor: pointer;
+      text-align: left;
+      font-size: 0.875rem;
+      transition: all 0.15s ease;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .filter-btn:hover {
+      background: rgba(0, 0, 0, 0.02);
+      color: var(--text-main);
+    }
+    
+    .filter-btn.active {
+      background: var(--bg-card);
+      border-color: var(--border-color);
+      color: var(--text-main);
+    }
+    
+    .filter-count {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      background: rgba(0, 0, 0, 0.05);
+      padding: 0.1rem 0.4rem;
+      border-radius: 4px;
+    }
+    
+    .components-list {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    
+    .component-node {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    
+    .component-summary {
+      padding: 1.25rem 1.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.15s ease;
+    }
+    
+    .component-summary:hover {
+      background: rgba(0, 0, 0, 0.005);
+    }
+    
+    .component-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+    }
+    
+    .component-name {
+      font-weight: 550;
+      font-size: 1.05rem;
+      letter-spacing: -0.01em;
+    }
+    
+    .component-path {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      word-break: break-all;
+    }
+    
+    .component-stats {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    
+    .score-badge {
+      font-family: var(--font-mono);
+      font-weight: 600;
+      font-size: 0.85rem;
+      padding: 0.25rem 0.6rem;
+      border-radius: 4px;
+      border: 1px solid;
+    }
+    
+    .score-excellent {
+      background: rgba(5, 150, 105, 0.05);
+      border-color: rgba(5, 150, 105, 0.15);
+      color: var(--color-low);
+    }
+    
+    .score-good {
+      background: rgba(217, 119, 6, 0.05);
+      border-color: rgba(217, 119, 6, 0.15);
+      color: var(--color-medium);
+    }
+    
+    .score-poor {
+      background: rgba(239, 68, 68, 0.05);
+      border-color: rgba(239, 68, 68, 0.15);
+      color: var(--color-high);
+    }
+    
+    .toggle-icon {
+      color: var(--text-muted);
+      transition: transform 0.15s ease;
+      width: 16px;
+      height: 16px;
+    }
+    
+    .component-node.expanded .toggle-icon {
+      transform: rotate(180deg);
+    }
+    
+    .component-details {
+      border-top: 1px solid var(--border-color);
+      padding: 1.5rem;
+      display: none;
+      background: rgba(0, 0, 0, 0.01);
+    }
+    
+    .component-node.expanded .component-details {
+      display: block;
+    }
+    
+    .details-title {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 1rem;
+      color: var(--text-muted);
+    }
+    
+    .issue-card {
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 1rem;
+      background: var(--bg-card);
+    }
+    
+    .issue-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.5rem;
+    }
+    
+    .issue-label {
+      font-weight: 600;
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+    }
+    
+    .issue-card.high { border-left: 3px solid var(--color-high); }
+    .issue-card.high .issue-label { color: var(--color-high); }
+    
+    .issue-card.medium { border-left: 3px solid var(--color-medium); }
+    .issue-card.medium .issue-label { color: var(--color-medium); }
+    
+    .issue-card.low { border-left: 3px solid var(--color-low); }
+    .issue-card.low .issue-label { color: var(--color-low); }
+    
+    .issue-loc {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+    
+    .issue-text {
+      font-size: 0.875rem;
+      color: var(--text-main);
+      margin-bottom: 0.5rem;
+    }
+    
+    .issue-impact-tag {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-bottom: 0.75rem;
+    }
+    
+    .issue-code {
+      font-size: 0.8rem;
+      font-family: var(--font-mono);
+      background: #f4f4f5;
+      border: 1px solid var(--border-color);
+      padding: 0.65rem 0.85rem;
+      border-radius: 4px;
+      color: #0f172a;
+      overflow-x: auto;
+      white-space: pre;
+    }
+    
+    .rec-card {
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 0.75rem;
+      background: var(--bg-card);
+    }
+    
+    .rec-heading {
+      font-weight: 600;
+      color: #2563eb;
+      font-size: 0.9rem;
+      margin-bottom: 0.25rem;
+    }
+    
+    .rec-text {
+      font-size: 0.85rem;
+      color: var(--text-main);
+      margin-bottom: 0.25rem;
+    }
+    
+    .rec-impact-label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+    
+    .empty-state {
+      border: 1px dashed var(--border-color);
+      border-radius: 8px;
+      padding: 3rem;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="header-title">
+        <h1>Angular Performance Audit</h1>
+        <p>Project analysis summary report</p>
+      </div>
+      <div class="header-date" id="date-label"></div>
+    </header>
+
+    <div class="dashboard-grid">
+      <div class="metric-card">
+        <span class="metric-title">Average Performance</span>
+        <span class="metric-value" id="summary-score">-</span>
+        <span class="metric-sub">Score out of 100</span>
+      </div>
+      <div class="metric-card">
+        <span class="metric-title">Components</span>
+        <span class="metric-value" id="summary-components">-</span>
+        <span class="metric-sub">Files analyzed</span>
+      </div>
+      <div class="metric-card">
+        <span class="metric-title">Total Issues</span>
+        <span class="metric-value" id="summary-issues">-</span>
+        <span class="metric-sub">Performance bottlenecks</span>
+      </div>
+    </div>
+
+    <div class="main-layout">
+      <div class="sidebar">
+        <input type="text" id="search-input" class="search-box" placeholder="Search components...">
+        
+        <div class="filter-section">
+          <span class="section-label">Filter by Severity</span>
+          <div class="severity-filters">
+            <button class="filter-btn active" data-severity="all">
+              <span>All Components</span>
+              <span class="filter-count" id="badge-count-all">0</span>
+            </button>
+            <button class="filter-btn" data-severity="high">
+              <span>High Severity</span>
+              <span class="filter-count" id="badge-count-high">0</span>
+            </button>
+            <button class="filter-btn" data-severity="medium">
+              <span>Medium Severity</span>
+              <span class="filter-count" id="badge-count-medium">0</span>
+            </button>
+            <button class="filter-btn" data-severity="low">
+              <span>Low Severity</span>
+              <span class="filter-count" id="badge-count-low">0</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="components-list" id="results-container">
+        <!-- Generated dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const analyses = ${componentDataJson};
+    const summary = ${summaryDataJson};
+    
+    document.getElementById('date-label').innerText = new Date().toLocaleString();
+    document.getElementById('summary-score').innerText = summary.averagePerformanceScore + '/100';
+    document.getElementById('summary-components').innerText = summary.totalComponents;
+    document.getElementById('summary-issues').innerText = summary.totalIssues;
+
+    let currentFilter = 'all';
+    let searchQuery = '';
+
+    function getCount(severity) {
+      if (severity === 'all') return analyses.length;
+      return analyses.filter(a => {
+        const issues = [...a.changeDetectionIssues, ...a.templateIssues, ...a.subscriptionIssues];
+        return issues.some(i => i.severity === severity);
+      }).length;
+    }
+
+    document.getElementById('badge-count-all').innerText = getCount('all');
+    document.getElementById('badge-count-high').innerText = getCount('high');
+    document.getElementById('badge-count-medium').innerText = getCount('medium');
+    document.getElementById('badge-count-low').innerText = getCount('low');
+
+    function renderResults() {
+      const container = document.getElementById('results-container');
+      container.innerHTML = '';
+      
+      const filtered = analyses.filter(a => {
+        if (searchQuery && !a.componentName.toLowerCase().includes(searchQuery.toLowerCase()) && !a.filePath.toLowerCase().includes(searchQuery.toLowerCase())) {
+          return false;
+        }
+        
+        if (currentFilter !== 'all') {
+          const issues = [...a.changeDetectionIssues, ...a.templateIssues, ...a.subscriptionIssues];
+          if (!issues.some(i => i.severity === currentFilter)) {
+            return false;
+          }
+        }
+        
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        container.innerHTML = \`<div class="empty-state">No components match the active filter criteria.</div>\`;
+        return;
+      }
+
+      filtered.forEach(a => {
+        const node = document.createElement('div');
+        node.className = 'component-node';
+        
+        let scoreClass = 'score-excellent';
+        if (a.performanceScore < 50) scoreClass = 'score-poor';
+        else if (a.performanceScore < 90) scoreClass = 'score-good';
+
+        const allIssues = [...a.changeDetectionIssues, ...a.templateIssues, ...a.subscriptionIssues];
+
+        let issuesHtml = '';
+        if (allIssues.length > 0) {
+          issuesHtml += \`<div class="details-title">Detected Issues (\${allIssues.length})</div>\`;
+          allIssues.sort((x, y) => {
+            const priority = { 'high': 3, 'medium': 2, 'low': 1 };
+            return priority[y.severity] - priority[x.severity];
+          }).forEach(issue => {
+            const locStr = issue.location ? \`Line \${issue.location.line}, Col \${issue.location.column}\` : '';
+            const impactHtml = issue.estimatedImpact ? \`<div class="issue-impact-tag">Impact: \${issue.estimatedImpact}</div>\` : '';
+            issuesHtml += \`
+              <div class="issue-card \${issue.severity}">
+                <div class="issue-card-header">
+                  <span class="issue-label">\${issue.type.replace('-', ' ')}</span>
+                  <span class="issue-loc">\${locStr}</span>
+                </div>
+                <div class="issue-text">\${issue.description}</div>
+                \${impactHtml}
+                <div class="issue-code">Fix: \${escapeHtml(issue.fix)}</div>
+              </div>
+            \`;
+          });
+        } else {
+          issuesHtml += \`<div class="details-title">No Issues Found</div><p style="font-size:0.875rem;color:var(--text-muted)">This component is fully optimized.</p>\`;
+        }
+
+        let recommendationsHtml = '';
+        if (a.recommendations && a.recommendations.length > 0) {
+          recommendationsHtml += \`<div class="details-title" style="margin-top:2rem">Recommendations</div>\`;
+          a.recommendations.forEach(rec => {
+            recommendationsHtml += \`
+              <div class="rec-card">
+                <div class="rec-heading">\${rec.title}</div>
+                <div class="rec-text">\${rec.description}</div>
+                <div class="rec-impact-label">Impact: \${rec.estimatedImpact}</div>
+              </div>
+            \`;
+          });
+        }
+
+        node.innerHTML = \`
+          <div class="component-summary" onclick="this.parentElement.classList.toggle('expanded')">
+            <div class="component-meta">
+              <span class="component-name">\${a.componentName}</span>
+              <span class="component-path">\${a.filePath}</span>
+            </div>
+            <div class="component-stats">
+              <span class="score-badge \${scoreClass}">\${a.performanceScore}/100</span>
+              <svg class="toggle-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+            </div>
+          </div>
+          <div class="component-details">
+            \${issuesHtml}
+            \${recommendationsHtml}
+          </div>
+        \`;
+        
+        container.appendChild(node);
+      });
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    document.getElementById('search-input').addEventListener('input', (e) => {
+      searchQuery = e.target.value;
+      renderResults();
+    });
+
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentFilter = btn.getAttribute('data-severity');
+        renderResults();
+      });
+    });
+
+    renderResults();
+  </script>
+</body>
+</html>`;
+  }
+
   public static async saveReportToFile(
     report: string,
     outputPath: string = 'performance-report.md'
@@ -1244,9 +1956,9 @@ export class PerformanceAnalyzerCLI {
     const fs = await import('fs/promises');
     try {
       await fs.writeFile(outputPath, report, 'utf8');
-      console.log(`✅ Performance report saved to: ${outputPath}`);
+      console.log(`Performance report saved to: ${outputPath}`);
     } catch (error) {
-      console.error(`❌ Failed to save report:`, error);
+      console.error(`Failed to save report:`, error);
       throw error;
     }
   }
@@ -1255,18 +1967,17 @@ export class PerformanceAnalyzerCLI {
     projectPath?: string,
     outputPath?: string
   ): ComponentAnalysis[] {
-    // Use current working directory if no path provided
     const targetPath = projectPath || process.cwd();
     
-    console.log(`🔍 Starting performance analysis for: ${targetPath}`);
+    console.log(`Starting performance analysis for: ${targetPath}`);
 
     const startTime = Date.now();
     const { analyses, summary } = this.analyzeProjectWithSummary(targetPath);
     const endTime = Date.now();
 
-    console.log(`\n✅ Analysis completed in ${endTime - startTime}ms`);
+    console.log(`\nAnalysis completed in ${endTime - startTime}ms`);
     console.log(
-      `📊 Results: ${summary.totalComponents} components, ${summary.totalIssues} issues found`
+      `Results: ${summary.totalComponents} components, ${summary.totalIssues} issues found`
     );
 
     const report = this.generateReportWithSummary(analyses, summary);
