@@ -7,7 +7,7 @@ Copyright (c) 2025 eawebmaster20
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
 in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+in the Software without restriction, including merge, publish, distribute, sublicense, and/or sell
 copies of the Software, and to permit persons to whom the Software is
 furnished to do so, subject to the following conditions:
 
@@ -16,8 +16,8 @@ furnished to do so, subject to the following conditions:
 **All usage of this software must include proper attribution:**
 
 ### 1. Code Attribution
-- The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software
-- If you modify the software, you must clearly indicate the modifications made
+- The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+- If you modify the software, you must clearly indicate the modifications made.
 
 ### 2. User-Facing Attribution (Required for all projects)
 You must include attribution in at least ONE of the following ways:
@@ -41,17 +41,17 @@ Powered by ngperf (https://github.com/eawebmaster20/ngperf)
 ```
 
 ### 3. Commercial Use Welcome
-- ✅ Free for personal projects
-- ✅ Free for open source projects  
-- ✅ Free for commercial projects
-- ✅ Free for enterprise use
-- 🎯 **Just give credit where it's due!**
+- Free for personal projects
+- Free for open source projects  
+- Free for commercial projects
+- Free for enterprise use
+- Just give credit where it's due!
 
 ### 4. Optional Recognition (Appreciated but not required)
-- ⭐ Star the GitHub repository
-- 🐦 Mention @eawebmaster20 on social media
-- 📝 Write a blog post about your experience
-- 💡 Contribute improvements back to the project
+- Star the GitHub repository
+- Mention @eawebmaster20 on social media
+- Write a blog post about your experience
+- Contribute improvements back to the project
 
 ## Warranty Disclaimer
 
@@ -65,4 +65,4 @@ SOFTWARE.
 
 ---
 
-**🙏 Thank you for using ngperf and supporting open source development!**
+**Thank you for using ngperf and supporting open source development!**

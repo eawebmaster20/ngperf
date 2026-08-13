@@ -15,7 +15,7 @@
     "analyze:component": "npm run ngperf component",
     "analyze:report": "npm run ngperf report",
     "analyze:help": "npm run ngperf help",
-    "analyze:demo": "tsx src/ngperf/quick-start.ts"
+    "analyze:demo": "tsx src/quick-start.ts"
   },
   "keywords": [
     "angular",
