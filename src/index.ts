@@ -12,9 +12,6 @@ export {
 
 export { quickStartDemo } from './quick-start';
 
-// Optional attribution helper
-export { LicenseChecker } from './license-checker';
-export type { AttributionInfo } from './license-checker';
 
 export type {
   ComponentAnalysis,
