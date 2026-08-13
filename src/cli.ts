@@ -55,17 +55,18 @@ async function main() {
   }
   
   try {
-    console.log('🚀 Angular Performance Analyzer');
+    console.log('Angular Performance Analyzer');
     console.log('================================\n');
     
     const startTime = Date.now();
+    const open = parsed.open || false;
     
     switch (command) {
       case 'project':
         const projectPath = parsed._[1];
         const outputPath = parsed.output || parsed.o;
         const format = parsed.format || parsed.f || 'markdown';
-        await commands.project(projectPath, outputPath, format);
+        await commands.project(projectPath, outputPath, format, open);
         break;
       case 'component':
         await commands.component(parsed._[1]);
@@ -73,15 +74,15 @@ async function main() {
       case 'report':
         const reportPath = parsed._[1];
         const reportOutput = parsed.output || parsed.o;
-        await commands.report(reportPath, reportOutput);
+        await commands.report(reportPath, reportOutput, open);
         break;
     }
     
     const duration = Date.now() - startTime;
-    console.log(`\n✅ Completed in ${duration}ms`);
+    console.log(`\nCompleted in ${duration}ms`);
     
   } catch (error) {
-    console.error('❌ Error:', error instanceof Error ? error.message : error);
+    console.error('Error:', error instanceof Error ? error.message : error);
     process.exit(1);
   }
 }
