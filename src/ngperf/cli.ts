@@ -5,10 +5,14 @@
  */
 
 import * as path from 'path';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import { 
   PerformanceAnalyzerCLI, 
   PerformanceAnalyzer 
 } from './performance-analyzer';
+
+const execAsync = promisify(exec);
 
 // Helper function to resolve project path
 function resolveProjectPath(inputPath?: string): string {
@@ -32,7 +36,24 @@ async function ensureOutputDirectory(outputPath: string): Promise<void> {
     await fs.access(outputDir);
   } catch {
     await fs.mkdir(outputDir, { recursive: true });
-    console.log(`📁 Created output directory: ${outputDir}`);
+    console.log(`Created output directory: ${outputDir}`);
+  }
+}
+
+// Helper function to open report in default browser
+async function openInBrowser(filePath: string): Promise<void> {
+  const platform = process.platform;
+  try {
+    const absolutePath = path.resolve(filePath);
+    if (platform === 'darwin') {
+      await execAsync(`open "${absolutePath}"`);
+    } else if (platform === 'win32') {
+      await execAsync(`start "" "${absolutePath}"`);
+    } else {
+      await execAsync(`xdg-open "${absolutePath}"`);
+    }
+  } catch (err) {
+    console.error('Failed to open browser:', err instanceof Error ? err.message : err);
   }
 }
 
@@ -44,27 +65,24 @@ function parseArgs(args: string[]) {
     const arg = args[i];
     
     if (arg.startsWith('--')) {
-      // Long flag: --output
       const key = arg.slice(2);
       const nextArg = args[i + 1];
       if (nextArg && !nextArg.startsWith('-')) {
         parsed[key] = nextArg;
-        i++; // Skip next arg since we consumed it
+        i++;
       } else {
         parsed[key] = true;
       }
     } else if (arg.startsWith('-') && arg.length === 2) {
-      // Short flag: -o
       const key = arg.slice(1);
       const nextArg = args[i + 1];
       if (nextArg && !nextArg.startsWith('-')) {
         parsed[key] = nextArg;
-        i++; // Skip next arg since we consumed it
+        i++;
       } else {
         parsed[key] = true;
       }
     } else {
-      // Positional argument
       parsed._.push(arg);
     }
   }
@@ -75,32 +93,53 @@ function parseArgs(args: string[]) {
 // Command handlers
 const commands = {
   // Analyze entire project
-  async project(projectPath?: string, outputPath?: string, format?: string) {
+  async project(projectPath?: string, outputPath?: string, format?: string, open?: boolean) {
     const resolvedPath = resolveProjectPath(projectPath);
-    console.log(`🔍 Analyzing project: ${resolvedPath}`);
+    console.log(`Analyzing project: ${resolvedPath}`);
     
     if (outputPath) {
       await ensureOutputDirectory(outputPath);
     }
     
+    const { analyses, summary } = PerformanceAnalyzerCLI.analyzeProjectWithSummary(resolvedPath);
+    
+    let outputFile = outputPath;
+    
     if (format === 'json') {
-      // Handle JSON format
-      const { analyses, summary } = PerformanceAnalyzerCLI.analyzeProjectWithSummary(resolvedPath);
       const jsonReport = {
         summary,
         analyses,
         generatedAt: new Date().toISOString()
       };
-      
-      const outputFile = outputPath || './performance-report.json';
+      outputFile = outputFile || './performance-report.json';
       await PerformanceAnalyzerCLI.saveReportToFile(JSON.stringify(jsonReport, null, 2), outputFile);
-      console.log(`📄 JSON report saved to: ${outputFile}`);
+      console.log(`JSON report saved to: ${outputFile}`);
+    } else if (format === 'html') {
+      const htmlReport = PerformanceAnalyzerCLI.generateHtmlReport(analyses, summary);
+      outputFile = outputFile || './performance-report.html';
+      await PerformanceAnalyzerCLI.saveReportToFile(htmlReport, outputFile);
+      console.log(`HTML report saved to: ${outputFile}`);
       
-      return { analyses, summary, reportPath: outputFile };
+      if (open) {
+        await openInBrowser(outputFile);
+      }
     } else {
       // Default markdown format
-      return PerformanceAnalyzerCLI.runAnalysis(resolvedPath, outputPath);
+      const report = PerformanceAnalyzerCLI.generateReportWithSummary(analyses, summary);
+      outputFile = outputFile || './performance-report.md';
+      await PerformanceAnalyzerCLI.saveReportToFile(report, outputFile);
+      console.log(`Performance report saved to: ${outputFile}`);
+      
+      if (open) {
+        const htmlReport = PerformanceAnalyzerCLI.generateHtmlReport(analyses, summary);
+        const htmlFile = outputFile.replace(/\.md$/, '.html') || './performance-report.html';
+        await PerformanceAnalyzerCLI.saveReportToFile(htmlReport, htmlFile);
+        console.log(`HTML report generated for viewing: ${htmlFile}`);
+        await openInBrowser(htmlFile);
+      }
     }
+    
+    return { analyses, summary, reportPath: outputFile };
   },
 
   // Analyze single component
@@ -110,12 +149,12 @@ const commands = {
     }
     
     const resolvedPath = path.resolve(componentPath);
-    console.log(`🔍 Analyzing component: ${resolvedPath}`);
+    console.log(`Analyzing component: ${resolvedPath}`);
     
     const analyzer = new PerformanceAnalyzer();
     const analysis = analyzer.analyzeComponent(resolvedPath);
     
-    console.log(`\n📊 Component Analysis Results:`);
+    console.log(`\nComponent Analysis Results:`);
     console.log(`   Name: ${analysis.componentName}`);
     console.log(`   Performance Score: ${analysis.performanceScore}/100`);
     
@@ -125,7 +164,7 @@ const commands = {
     console.log(`   Issues Found: ${totalIssues}`);
     
     if (analysis.recommendations.length > 0) {
-      console.log(`\n💡 Top Recommendations:`);
+      console.log(`\nTop Recommendations:`);
       analysis.recommendations.slice(0, 3).forEach((rec, index) => {
         console.log(`   ${index + 1}. ${rec.title} (${rec.priority} priority)`);
       });
@@ -135,21 +174,39 @@ const commands = {
   },
 
   // Generate detailed report
-  async report(projectPath?: string, outputPath?: string) {
+  async report(projectPath?: string, outputPath?: string, open?: boolean) {
     const resolvedPath = resolveProjectPath(projectPath);
     const defaultOutput = outputPath || './performance-report.md';
     
-    console.log(`📋 Generating detailed report for: ${resolvedPath}`);
+    console.log(`Generating detailed report for: ${resolvedPath}`);
     
     await ensureOutputDirectory(defaultOutput);
     
     const { analyses, summary } = PerformanceAnalyzerCLI.analyzeProjectWithSummary(resolvedPath);
-    const report = PerformanceAnalyzerCLI.generateReportWithSummary(analyses, summary);
     
-    await PerformanceAnalyzerCLI.saveReportToFile(report, defaultOutput);
+    if (defaultOutput.endsWith('.html') || defaultOutput.endsWith('.htm')) {
+      const htmlReport = PerformanceAnalyzerCLI.generateHtmlReport(analyses, summary);
+      await PerformanceAnalyzerCLI.saveReportToFile(htmlReport, defaultOutput);
+      console.log(`HTML report saved to: ${defaultOutput}`);
+      if (open) {
+        await openInBrowser(defaultOutput);
+      }
+    } else {
+      const report = PerformanceAnalyzerCLI.generateReportWithSummary(analyses, summary);
+      await PerformanceAnalyzerCLI.saveReportToFile(report, defaultOutput);
+      console.log(`Performance report saved to: ${defaultOutput}`);
+      
+      if (open) {
+        const htmlReport = PerformanceAnalyzerCLI.generateHtmlReport(analyses, summary);
+        const htmlFile = defaultOutput.replace(/\.md$/, '.html');
+        await PerformanceAnalyzerCLI.saveReportToFile(htmlReport, htmlFile);
+        console.log(`HTML report generated for viewing: ${htmlFile}`);
+        await openInBrowser(htmlFile);
+      }
+    }
     
     // Also log summary to console
-    console.log(`\n📊 Analysis Summary:`);
+    console.log(`\nAnalysis Summary:`);
     console.log(`   Components: ${summary.totalComponents}`);
     console.log(`   Average Score: ${summary.averagePerformanceScore}/100`);
     console.log(`   Total Issues: ${summary.totalIssues}`);
@@ -160,7 +217,7 @@ const commands = {
   // Show help
   help() {
     console.log(`
-🚀 Angular Performance Analyzer CLI
+Angular Performance Analyzer CLI
 
 USAGE:
   ngperf-audit <command> [options]
@@ -173,20 +230,22 @@ COMMANDS:
 
 OPTIONS:
   -o, --output <file>         Output file path
-  -f, --format <type>         Report format: 'markdown' or 'json' (default: markdown)
+  -f, --format <type>         Report format: 'markdown', 'html' or 'json' (default: markdown)
+  --open                      Open the HTML report in the default browser
 
 EXAMPLES:
   ngperf-audit help                                         # Show this help
   ngperf-audit project                                      # Analyze current project
   ngperf-audit project ./src/app                           # Analyze src/app folder
+  ngperf-audit project ./src/app --open                    # Analyze and open report in browser
   ngperf-audit project ./src/app -o ./reports/report.md    # Save to custom file
   ngperf-audit project ./src/app -f json                   # Generate JSON report
-  ngperf-audit project ./src/app -o ./report.json -f json  # JSON report with custom path
+  ngperf-audit project ./src/app -f html --open            # Generate HTML report and open it
   
   ngperf-audit component ./src/app/app.component.ts        # Analyze single component
   
   ngperf-audit report                                       # Generate detailed report
-  ngperf-audit report ./src/app -o ./my-report.md          # Custom output path
+  ngperf-audit report ./src/app -o ./my-report.html --open  # Custom HTML output path and open
 
 DEVELOPMENT USAGE (in project root):
   npm run ngperf-audit project                              # If added to package.json scripts
@@ -209,17 +268,18 @@ async function main() {
   }
   
   try {
-    console.log('🚀 Angular Performance Analyzer');
+    console.log('Angular Performance Analyzer');
     console.log('================================\n');
     
     const startTime = Date.now();
+    const open = parsed.open || false;
     
     switch (command) {
       case 'project':
         const projectPath = parsed._[1];
         const outputPath = parsed.output || parsed.o;
         const format = parsed.format || parsed.f || 'markdown';
-        await commands.project(projectPath, outputPath, format);
+        await commands.project(projectPath, outputPath, format, open);
         break;
       case 'component':
         await commands.component(parsed._[1]);
@@ -227,15 +287,15 @@ async function main() {
       case 'report':
         const reportPath = parsed._[1];
         const reportOutput = parsed.output || parsed.o;
-        await commands.report(reportPath, reportOutput);
+        await commands.report(reportPath, reportOutput, open);
         break;
     }
     
     const duration = Date.now() - startTime;
-    console.log(`\n✅ Completed in ${duration}ms`);
+    console.log(`\nCompleted in ${duration}ms`);
     
   } catch (error) {
-    console.error('❌ Error:', error instanceof Error ? error.message : error);
+    console.error('Error:', error instanceof Error ? error.message : error);
     process.exit(1);
   }
 }
